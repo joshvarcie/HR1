@@ -2,7 +2,7 @@ library(ipumsr)
 library(tidyverse)
 library(haven)
 
-ddi <- read_ipums_ddi("hr1_ACS1yr_86var.xml")
+ddi <- read_ipums_ddi(r"{C:\R\workshop\hr1_ACS1yr_86var.xml}")
 acs <- read_ipums_micro(ddi)
 
 acs<- acs|> mutate(
@@ -126,8 +126,11 @@ ohp_elig <- ohp_adultMAGI |>
       )
   ) 
 
+ohp_elig <- ohp_elig |>
+  mutate(exempt_or_compliant = ifelse(income_compliant==1 | exempt_any==1, 1, 0))
+
 # Print totals
-for (var in c("american_indian", "w2", "self_employed", "likely_gig", "ui_receipt", "education_programs", "income_compliant")){
+for (var in c("american_indian", "w2", "self_employed", "likely_gig", "ui_receipt", "education_programs", "income_compliant", "exempt_or_compliant")){
  print(var)
   total <- ohp_elig |>
     filter(.data[[var]] == 1) |>
@@ -165,3 +168,6 @@ for (var in c("american_indian", "w2", "self_employed", "likely_gig", "ui_receip
 # ohp_elig|>filter(income_compliant==1)|>select(PERWT)|>sum()
 # 
 # ohp_elig|>select(PERWT)|>sum()
+
+
+
