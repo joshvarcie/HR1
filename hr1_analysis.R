@@ -2,9 +2,7 @@ library(ipumsr)
 library(tidyverse)
 library(haven)
 
-
-filepath <- r"{C:\R\workshop\}"
-ddi <- read_ipums_ddi(paste0(filepath, r"{hr1_ACS1yr_86var.xml}"))
+ddi <- read_ipums_ddi("hr1_ACS1yr_86var.xml")
 acs <- read_ipums_micro(ddi)
 
 acs<- acs|> mutate(
@@ -64,9 +62,6 @@ acs<- acs|>
 # Identify individual who is exempt because they are receiving postpartum coverage
   exempt_postpartum = ifelse(FERTYR == 2, 1, 0),
 
-# Identify a woman of reproductive age 
-  woman_repro_age = ifelse()
-
 # Unemployment data
 
 
@@ -76,8 +71,7 @@ acs<- acs|>
                          exempt_vet_totaldis == 1 |
                          exempt_disabled == 1 |
                          exempt_SNAP == 1 |
-                         exempt_postpartum == 1 |
-                         exempt_american_indian == 1,
+                         exempt_postpartum == 1 ~ 1,
                          .default = 0
                            )
   )
@@ -115,6 +109,33 @@ ohp_adultMAGI_exempt<- ohp_adultMAGI|>
 ohp_adultMAGI |>
   select(PERWT)|>
   sum()
+
+ohp_elig <- ohp_adultMAGI |>
+  mutate(
+    american_indian = case_when(
+      RACAMIND == 2 ~ 1,
+      .default = 0),
+    w2 = if_else(CLASSWKRD %in% 22:28, 1, 0),
+    self_employed = if_else(CLASSWKRD %in% 10:14, 1, 0),
+    likely_gig = if_else(w2 == 0 & IND %in% c(6380, 6190, 8564, 8470), 1, 0),
+    ui_receipt = if_else(EMPSTAT == 2, 1, 0),
+    education_programs = if_else(SCHOOL == 2, 1, 0),
+    income_compliant = case_when(
+      (INCTOT / 12) > 0 ~ 1,
+      .default = 0
+      )
+  ) 
+
+# Print totals
+for (var in c("american_indian", "w2", "self_employed", "likely_gig", "ui_receipt", "education_programs", "income_compliant")){
+ print(var)
+  total <- ohp_elig |>
+    filter(.data[[var]] == 1) |>
+    summarise(total = sum(PERWT, na.rm = TRUE)) |>
+    pull(total)
+  
+  print(total)
+}
 
 # 
 # ohp_enrl<- ohp_elig |>
