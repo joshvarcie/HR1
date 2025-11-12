@@ -2,7 +2,9 @@ library(ipumsr)
 library(tidyverse)
 library(haven)
 
-ddi <- read_ipums_ddi("hr1_ACS1yr_86var.xml")
+
+filepath <- r"{C:\R\workshop\}"
+ddi <- read_ipums_ddi(paste0(filepath, r"{hr1_ACS1yr_86var.xml}"))
 acs <- read_ipums_micro(ddi)
 
 acs<- acs|> mutate(
@@ -62,6 +64,9 @@ acs<- acs|>
 # Identify individual who is exempt because they are receiving postpartum coverage
   exempt_postpartum = ifelse(FERTYR == 2, 1, 0),
 
+# Identify a woman of reproductive age 
+  woman_repro_age = ifelse()
+
 # Unemployment data
 
 
@@ -71,7 +76,8 @@ acs<- acs|>
                          exempt_vet_totaldis == 1 |
                          exempt_disabled == 1 |
                          exempt_SNAP == 1 |
-                         exempt_postpartum == 1 ~ 1,
+                         exempt_postpartum == 1 |
+                         exempt_american_indian == 1,
                          .default = 0
                            )
   )
