@@ -2,15 +2,8 @@ library(ipumsr)
 library(tidyverse)
 library(haven)
 
-ddi <- read_ipums_ddi(r"{C:\R\workshop\hr1_ACS1yr_86var.xml}")
+ddi <- read_ipums_ddi("hr1_ACS1yr_86var.xml")
 acs <- read_ipums_micro(ddi)
-
-county_unemployment <- read_csv(r"{C:\R\workshop\HR1\laucntycur14.csv}")|>
-  mutate(national_unemployment_rate = 4.2)|>
-  mutate(exempt_county_unemployment = case_when(unemployment_rate >= 8.0 ~ 1,
-                                         unemployment_rate >= 1.5 * national_unemployment_rate ~ 1,
-                                         .default = 0))|>
-  select(COUNTYFIP,unemployment_rate, exempt_county_unemployment)
 
 acs<- acs|> mutate(
   # First, recode all difficulties to 0 or 1
@@ -26,15 +19,14 @@ acs<- acs|> mutate(
     adls = DIFFPHYS + DIFFMOB + DIFFCARE + DIFFEYE + DIFFHEAR,
   
   # Count an individual as disabled if they have at least 1 ADL. 
-  disabled = adls > 0)
+  disabled = adls > 0) |> 
+  zap_labels()
 
 acs_by_hh <- acs|>
   group_by(SERIAL)|>
   summarize(disabled_in_hh = sum(disabled))
   
 acs <- left_join(acs, acs_by_hh, by= 'SERIAL')
-
-acs <- left_join(acs, county_unemployment, by='COUNTYFIP')
   
 
 acs<- acs|>
@@ -66,7 +58,7 @@ acs<- acs|>
 
 # Identify individual who is exempt because they are receiving SNAP
 
-  exempt_SNAP = ifelse(FOODSTMP == 2 & UHRSWORK >=20, 1, 0),
+  exempt_SNAP = ifelse(FOODSTMP == 2, 1, 0),
 
 # Identify individual who is exempt because they are receiving postpartum coverage
   exempt_postpartum = ifelse(FERTYR == 2, 1, 0),
@@ -80,14 +72,13 @@ acs<- acs|>
                          exempt_vet_totaldis == 1 |
                          exempt_disabled == 1 |
                          exempt_SNAP == 1 |
-                         exempt_postpartum == 1 |
-                         exempt_county_unemployment ==1 ~ 1,
+                         exempt_postpartum == 1 ~ 1,
                          .default = 0
                            )
   )
 # 
   
-# Join on county-level un  
+  
 
 
 # Define potential population who is subject to work requirements, which includes anyone in the
@@ -113,17 +104,20 @@ ohp_adultMAGI_exempt<- ohp_adultMAGI|>
          num_exempt_disabled = exempt_disabled*PERWT,
          num_exempt_SNAP = exempt_SNAP*PERWT,
          num_exempt_postpartum = exempt_postpartum*PERWT,
-         num_exempt_any = exempt_any*PERWT, 
-         num_exempt_county_unemployment= exempt_county_unemployment*PERWT,
-         total = 1*PERWT)|>
+         num_exempt_any = exempt_any*PERWT)|>
   summarize(across(where(is.numeric), ~sum(.x, na.rm = TRUE)))
 
-ohp_adultMAGI |>
+total_eligible <- ohp_adultMAGI |>
   select(PERWT)|>
   sum()
 
 ohp_elig <- ohp_adultMAGI |>
   mutate(
+    income_compliant = case_when(
+      (INCTOT / 12) > 580 ~ 1,
+      (UHRSWORK * 4) > 40 ~ 1,
+      .default = 0
+    ),
     american_indian = case_when(
       RACAMIND == 2 ~ 1,
       .default = 0),
@@ -131,23 +125,56 @@ ohp_elig <- ohp_adultMAGI |>
     self_employed = if_else(CLASSWKRD %in% 10:14, 1, 0),
     likely_gig = if_else(w2 == 0 & IND %in% c(6380, 6190, 8564, 8470), 1, 0),
     ui_receipt = if_else(EMPSTAT == 2, 1, 0),
-    education_programs = if_else(SCHOOL == 2, 1, 0),
-    income_compliant = case_when(
-      (INCTOT / 12) > 0 ~ 1,
-      .default = 0
-      )
+    education_programs = if_else(SCHOOL == 2, 1, 0)
   ) 
 
-ohp_elig <- ohp_elig |>
-  mutate(exempt_or_compliant = ifelse(income_compliant==1 | exempt_any==1, 1, 0))
+# Collapse to totals for compliance group
+ohp_elig_total <- ohp_elig |>
+  mutate(num_american_indian = american_indian*PERWT, 
+         num_w2 = w2*PERWT,
+         num_self_employed = self_employed*PERWT,
+         num_likely_gig = likely_gig*PERWT,
+         num_ui_receipt = ui_receipt*PERWT,
+         num_education_programs = education_programs*PERWT,
+         num_income_compliant = income_compliant*PERWT) |> 
+  summarize(across(starts_with("num"), ~sum(.x, na.rm = TRUE))) |> 
+  t() |> 
+  as.data.frame()
 
-# Print totals
-for (var in c("american_indian", "w2", "self_employed", "likely_gig", "ui_receipt", "education_programs", "income_compliant", "exempt_or_compliant")){
- print(var)
-  total <- ohp_elig |>
-    filter(.data[[var]] == 1) |>
-    summarise(total = sum(PERWT, na.rm = TRUE)) |>
-    pull(total)
+ohp_elig_total$group <- rownames(ohp_elig_total)
+rownames(ohp_elig_total) <- NULL
+
+ohp_elig_pct <- ohp_elig_total |> 
+  filter(group != "num_disabled_in_hh_minus_self") |> 
+  rename(group_total = V1) |> 
+  mutate(pct = group_total/total_eligible)
   
-  print(total)
-}
+
+# 
+# ohp_enrl<- ohp_elig |>
+#   filter(HINSCAID == 2)|>
+#   mutate(PERWT = as.numeric(PERWT))
+# 
+# all_enrl <- data |>
+#   filter(HINSCAID == 2)|>
+#   mutate(PERWT = as.numeric(PERWT))
+# 
+# ohp_enrl|>select(PERWT)|>sum()
+# all_enrl|>select(PERWT)|>sum()
+# 
+# 
+# ohp_elig <- ohp_elig|>
+#   mutate(
+#     american_indian = case_when(
+#       RACAMIND == 2 ~ 1,
+#       .default = 0),
+#     income_compliant = case_when((INCTOT / 12) > 0 ~1,
+#     .default = 0),
+#     income_compliant_due_to_work = case_when(income_compliant = 1 & )
+#     edu_compliant = case_when())
+# 
+# 
+# 
+# ohp_elig|>filter(income_compliant==1)|>select(PERWT)|>sum()
+# 
+# ohp_elig|>select(PERWT)|>sum()
